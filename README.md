@@ -1,5 +1,6 @@
-# OmegaCross
+# OmegaPlus
 
+Vibe coded programming language. Made by GPT Codex-5.3 (extra high reasoning) and Claude Opus-4.6 (medium reasoning).
 OmegaCross is a C11 compiler (`omegac`) for OmegaPlus source (`.u`) targeting ARM64 Mach-O on Apple Silicon.
 
 ## Repository Layout
@@ -24,18 +25,18 @@ OmegaCross is a C11 compiler (`omegac`) for OmegaPlus source (`.u`) targeting AR
 
 ## Language Support
 
-- Types: `uint32`, `int32`, `float32`, `string`, `boolean`, `vector<-int32>`
+- Types: `uint32`, `int32`, `float32`, `string`, `boolean`, `vector<-int32`
 - Literal suffixes: `u`, `i`, `f`, `b`
 - Control flow: `if`, `else`, `while`
 - Statements: declarations, assignment (`x = expr.`), expression statements, postfix return (`value!`)
 - Built-ins: `print(expr).`, `input(identifier).`, plus namespace forms `sti<->print(...)` and `sti<->input(...)`
 - Modules:
-  - `import sti.` for standard I/O
-  - `import vector.` for vectors (`example_vector.push_back(x).`, `example_vector.pop_back()`, `example_vector.clear()`, `example_vector.size`, `example_vector[index]`)
+    - `import sti.` for standard I/O
+    - `import vector.` for vectors (`example_vector.push_back(x).`, `example_vector.pop_back()`, `example_vector.clear()`, `example_vector.size`, `example_vector[index]`)
 - Operators:
-  - Arithmetic: `+`, `-`, `*`, `/`, `%`
-  - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
-  - Logic: `~`, `\/`, `/\`
+    - Arithmetic: `+`, `-`, `*`, `/`, `%`
+    - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
+    - Logic: `~`, `\/`, `/\`
 
 ## Build
 
