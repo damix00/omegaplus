@@ -35,6 +35,8 @@
 *.i*86
 *.x86_64
 *.hex
+*.o
+*.s
 
 # Debug files
 *.dSYM/
@@ -55,3 +57,8 @@ dkms.conf
 *.dwo
 
 .DS_Store
+
+# project specific stuff
+bin/
+build/
+tests/tmp/
