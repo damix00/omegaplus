@@ -363,6 +363,27 @@ static void gen_call(FunctionCodegen *fg, const ASTNode *call) {
             return;
         }
 
+        if (call->as.call_expr.builtin_kind == OMEGA_BUILTIN_VECTOR_METHOD_SORT) {
+            gen_expr(fg, call->as.call_expr.receiver_expr);
+            (void)fprintf(fg->cg->out, "    bl _omega_sort_i32_vec\n");
+            (void)fprintf(fg->cg->out, "    mov w0, #0\n");
+            fg->cg->need_sort_helper = true;
+            return;
+        }
+
+        if (call->as.call_expr.builtin_kind == OMEGA_BUILTIN_VECTOR_METHOD_FREE) {
+            gen_expr(fg, call->as.call_expr.receiver_expr);
+            /* x0 = vec struct ptr; free data then struct */
+            (void)fprintf(fg->cg->out, "    ldr x1, [x0]\n");      /* data ptr */
+            (void)fprintf(fg->cg->out, "    str x0, [sp, #-16]!\n"); /* save struct ptr */
+            (void)fprintf(fg->cg->out, "    mov x0, x1\n");
+            (void)fprintf(fg->cg->out, "    bl _free\n");           /* free data */
+            (void)fprintf(fg->cg->out, "    ldr x0, [sp], #16\n"); /* restore struct ptr */
+            (void)fprintf(fg->cg->out, "    bl _free\n");           /* free struct */
+            (void)fprintf(fg->cg->out, "    mov w0, #0\n");
+            return;
+        }
+
         fprintf(stderr, "codegen error: unsupported receiver call\n");
         exit(EXIT_FAILURE);
     }
@@ -475,7 +496,11 @@ static void gen_call(FunctionCodegen *fg, const ASTNode *call) {
             (void)fprintf(fg->cg->out, "    ldr w%zu, [sp], #16\n", i);
         }
     }
-    (void)fprintf(fg->cg->out, "    bl _%s\n", call->as.call_expr.func_name);
+    if (call->as.call_expr.is_namespace_call) {
+        (void)fprintf(fg->cg->out, "    bl _%s_%s\n", call->as.call_expr.ns_name, call->as.call_expr.func_name);
+    } else {
+        (void)fprintf(fg->cg->out, "    bl _%s\n", call->as.call_expr.func_name);
+    }
 }
 
 static void gen_expr(FunctionCodegen *fg, const ASTNode *expr) {
@@ -593,7 +618,7 @@ static void gen_stmt(FunctionCodegen *fg, const ASTNode *stmt) {
                 (void)fprintf(fg->cg->out, "    str x9, [x0]\n");
                 (void)fprintf(fg->cg->out, "    str wzr, [x0, #8]\n");
                 (void)fprintf(fg->cg->out, "    str wzr, [x0, #12]\n");
-            } else if (slot->type == OMEGA_TYPE_STRING) {
+            } else if (slot->type == OMEGA_TYPE_STRING || slot->type == OMEGA_TYPE_PTR) {
                 (void)fprintf(fg->cg->out, "    mov x0, #0\n");
             } else {
                 (void)fprintf(fg->cg->out, "    mov w0, #0\n");
@@ -633,14 +658,37 @@ static void gen_stmt(FunctionCodegen *fg, const ASTNode *stmt) {
         }
         case AST_WHILE_STMT: {
             int id = fg->cg->next_label_id++;
-            (void)fprintf(fg->cg->out, "L_while_begin_%d:\n", id);
+            if (fg->loop_depth == fg->loop_cap) {
+                size_t next = (fg->loop_cap == 0u) ? 4u : fg->loop_cap * 2u;
+                fg->loops = (LoopLabel *)xrealloc(fg->loops, next * sizeof(LoopLabel));
+                fg->loop_cap = next;
+            }
+            LoopLabel *lf = &fg->loops[fg->loop_depth++];
+            (void)snprintf(lf->begin_label, sizeof(lf->begin_label), "L_while_begin_%d", id);
+            (void)snprintf(lf->end_label, sizeof(lf->end_label), "L_while_end_%d", id);
+            (void)fprintf(fg->cg->out, "%s:\n", lf->begin_label);
             gen_expr(fg, stmt->as.while_stmt.cond_expr);
-            (void)fprintf(fg->cg->out, "    cbz w0, L_while_end_%d\n", id);
+            (void)fprintf(fg->cg->out, "    cbz w0, %s\n", lf->end_label);
             gen_block(fg, stmt->as.while_stmt.body_block);
-            (void)fprintf(fg->cg->out, "    b L_while_begin_%d\n", id);
-            (void)fprintf(fg->cg->out, "L_while_end_%d:\n", id);
+            (void)fprintf(fg->cg->out, "    b %s\n", lf->begin_label);
+            (void)fprintf(fg->cg->out, "%s:\n", lf->end_label);
+            fg->loop_depth--;
             return;
         }
+        case AST_BREAK_STMT:
+            if (fg->loop_depth == 0u) {
+                fprintf(stderr, "codegen error: break outside loop\n");
+                exit(EXIT_FAILURE);
+            }
+            (void)fprintf(fg->cg->out, "    b %s\n", fg->loops[fg->loop_depth - 1u].end_label);
+            return;
+        case AST_CONTINUE_STMT:
+            if (fg->loop_depth == 0u) {
+                fprintf(stderr, "codegen error: continue outside loop\n");
+                exit(EXIT_FAILURE);
+            }
+            (void)fprintf(fg->cg->out, "    b %s\n", fg->loops[fg->loop_depth - 1u].begin_label);
+            return;
         case AST_RETURN_STMT:
             gen_expr(fg, stmt->as.return_stmt.value_expr);
             (void)fprintf(fg->cg->out, "    b %s\n", fg->return_label);
@@ -726,7 +774,7 @@ bool generate_program_asm(ASTNode *program, const char *asm_path, Status *st) {
     codegen_emit(&cg, ".section __TEXT,__text,regular,pure_instructions\n");
     for (size_t i = 0; i < program->as.program.decl_count; i++) {
         ASTNode *decl = program->as.program.decls[i];
-        if (decl->kind == AST_FUNCTION) {
+        if (decl->kind == AST_FUNCTION && !decl->as.function.is_extern) {
             gen_function(&cg, decl);
         }
     }
@@ -746,6 +794,50 @@ bool generate_program_asm(ASTNode *program, const char *asm_path, Status *st) {
             (void)fprintf(cg.out, "%s:\n", cg.floats[i].label);
             (void)fprintf(cg.out, "    .long 0x%08x\n", cg.floats[i].bits);
         }
+    }
+
+    if (cg.need_sort_helper) {
+        codegen_emit(&cg, "\n; omega_sort_i32_vec: insertion sort for vector<-int32\n");
+        codegen_emit(&cg, "; struct layout: { int32* data @ 0, uint32 len @ 8, uint32 cap @ 12 }\n");
+        codegen_emit(&cg, ".globl _omega_sort_i32_vec\n");
+        codegen_emit(&cg, ".p2align 2\n");
+        codegen_emit(&cg, "_omega_sort_i32_vec:\n");
+        codegen_emit(&cg, "    stp x29, x30, [sp, #-32]!\n");
+        codegen_emit(&cg, "    mov x29, sp\n");
+        codegen_emit(&cg, "    stp x19, x20, [sp, #16]\n");
+        codegen_emit(&cg, "    ldr x19, [x0]\n");
+        codegen_emit(&cg, "    ldr w20, [x0, #8]\n");
+        codegen_emit(&cg, "    cmp w20, #2\n");
+        codegen_emit(&cg, "    b.lt Lomega_isort_done\n");
+        codegen_emit(&cg, "    mov w1, #1\n");
+        codegen_emit(&cg, "Lomega_isort_outer:\n");
+        codegen_emit(&cg, "    cmp w1, w20\n");
+        codegen_emit(&cg, "    b.ge Lomega_isort_done\n");
+        codegen_emit(&cg, "    uxtw x2, w1\n");
+        codegen_emit(&cg, "    ldr w3, [x19, x2, lsl #2]\n");
+        codegen_emit(&cg, "    sub w4, w1, #1\n");
+        codegen_emit(&cg, "Lomega_isort_inner:\n");
+        codegen_emit(&cg, "    cmp w4, #0\n");
+        codegen_emit(&cg, "    b.lt Lomega_isort_place\n");
+        codegen_emit(&cg, "    uxtw x5, w4\n");
+        codegen_emit(&cg, "    ldr w6, [x19, x5, lsl #2]\n");
+        codegen_emit(&cg, "    cmp w6, w3\n");
+        codegen_emit(&cg, "    b.le Lomega_isort_place\n");
+        codegen_emit(&cg, "    add w7, w4, #1\n");
+        codegen_emit(&cg, "    uxtw x7, w7\n");
+        codegen_emit(&cg, "    str w6, [x19, x7, lsl #2]\n");
+        codegen_emit(&cg, "    sub w4, w4, #1\n");
+        codegen_emit(&cg, "    b Lomega_isort_inner\n");
+        codegen_emit(&cg, "Lomega_isort_place:\n");
+        codegen_emit(&cg, "    add w5, w4, #1\n");
+        codegen_emit(&cg, "    uxtw x5, w5\n");
+        codegen_emit(&cg, "    str w3, [x19, x5, lsl #2]\n");
+        codegen_emit(&cg, "    add w1, w1, #1\n");
+        codegen_emit(&cg, "    b Lomega_isort_outer\n");
+        codegen_emit(&cg, "Lomega_isort_done:\n");
+        codegen_emit(&cg, "    ldp x19, x20, [sp, #16]\n");
+        codegen_emit(&cg, "    ldp x29, x30, [sp], #32\n");
+        codegen_emit(&cg, "    ret\n");
     }
 
     if (fclose(out) != 0) {

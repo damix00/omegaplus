@@ -119,6 +119,18 @@ static void lex_identifier_or_keyword(Lexer *lx) {
         kind = TOK_BOOL_TRUE;
     } else if (strcmp(text, "false") == 0) {
         kind = TOK_BOOL_FALSE;
+    } else if (strcmp(text, "extern") == 0) {
+        kind = TOK_EXTERN;
+    } else if (strcmp(text, "module") == 0) {
+        kind = TOK_MODULE;
+    } else if (strcmp(text, "break") == 0) {
+        kind = TOK_BREAK;
+    } else if (strcmp(text, "continue") == 0) {
+        kind = TOK_CONTINUE;
+    } else if (strcmp(text, "void") == 0) {
+        kind = TOK_TYPE_VOID;
+    } else if (strcmp(text, "ptr") == 0) {
+        kind = TOK_TYPE_PTR;
     }
 
     lex_emit_owned(lx, kind, text, line, col);

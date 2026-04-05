@@ -1,5 +1,5 @@
 -> main() {
-  vector<-int32 example_vector.
-  example_vector.push_back(1i).
+  sti<->vector<-int32 example_vector.
+  example_vector->push_back(1i).
   0i!
 }

@@ -51,6 +51,20 @@ static const OmegaBuiltinSpec k_vector_method_builtins[] = {
         .allow_plain_calls = false,
         .requires_import = true,
     },
+    {
+        .kind = OMEGA_BUILTIN_VECTOR_METHOD_SORT,
+        .module_name = "vector",
+        .name = "sort",
+        .allow_plain_calls = false,
+        .requires_import = true,
+    },
+    {
+        .kind = OMEGA_BUILTIN_VECTOR_METHOD_FREE,
+        .module_name = "vector",
+        .name = "free",
+        .allow_plain_calls = false,
+        .requires_import = true,
+    },
 };
 
 static const OmegaBuiltinSpec k_vector_property_builtins[] = {

@@ -16,6 +16,25 @@ static FunctionSymbol *find_function(Semantic *sem, const char *name) {
     return NULL;
 }
 
+static FunctionSymbol *find_module_function(Semantic *sem, const char *module_name, const char *func_name) {
+    for (size_t i = 0; i < sem->module_func_count; i++) {
+        if (strcmp(sem->module_funcs[i].module_name, module_name) == 0 &&
+            strcmp(sem->module_funcs[i].name, func_name) == 0) {
+            return &sem->module_funcs[i];
+        }
+    }
+    return NULL;
+}
+
+static void push_module_function_symbol(Semantic *sem, FunctionSymbol fn) {
+    if (sem->module_func_count == sem->module_func_cap) {
+        size_t next = (sem->module_func_cap == 0u) ? 8u : sem->module_func_cap * 2u;
+        sem->module_funcs = (FunctionSymbol *)xrealloc(sem->module_funcs, next * sizeof(FunctionSymbol));
+        sem->module_func_cap = next;
+    }
+    sem->module_funcs[sem->module_func_count++] = fn;
+}
+
 static void push_function_symbol(Semantic *sem, FunctionSymbol fn) {
     if (sem->func_count == sem->func_cap) {
         size_t next = (sem->func_cap == 0u) ? 8u : sem->func_cap * 2u;
@@ -32,6 +51,10 @@ static bool sem_has_import(const Semantic *sem, const char *module_name) {
         }
     }
     return false;
+}
+
+static bool sem_has_vector_import(const Semantic *sem) {
+    return sem_has_import(sem, "sti") || sem_has_import(sem, "vector");
 }
 
 static void sem_add_import(Semantic *sem, const char *module_name) {
@@ -86,8 +109,8 @@ static void analyze_stmt(Semantic *sem, ASTNode *stmt, Scope *scope, const Funct
             analyze_block(sem, stmt, scope, fn);
             return;
         case AST_VAR_DECL: {
-            if (stmt->as.var_decl.var_type == OMEGA_TYPE_VECTOR && !sem_has_import(sem, "vector")) {
-                semantic_fail(sem, stmt->line, stmt->column, "vector type requires 'import vector.'");
+            if (stmt->as.var_decl.var_type == OMEGA_TYPE_VECTOR && !sem_has_vector_import(sem)) {
+                semantic_fail(sem, stmt->line, stmt->column, "vector type requires 'import sti.' or 'import vector.'");
                 return;
             }
             if (stmt->as.var_decl.init_expr != NULL) {
@@ -162,9 +185,21 @@ static void analyze_stmt(Semantic *sem, ASTNode *stmt, Scope *scope, const Funct
             }
             Scope child = {0};
             child.parent = scope;
+            sem->loop_depth++;
             analyze_block(sem, stmt->as.while_stmt.body_block, &child, fn);
+            sem->loop_depth--;
             return;
         }
+        case AST_BREAK_STMT:
+            if (sem->loop_depth == 0) {
+                semantic_fail(sem, stmt->line, stmt->column, "break outside loop");
+            }
+            return;
+        case AST_CONTINUE_STMT:
+            if (sem->loop_depth == 0) {
+                semantic_fail(sem, stmt->line, stmt->column, "continue outside loop");
+            }
+            return;
         case AST_EXPR_STMT:
             (void)analyze_expr(sem, stmt->as.expr_stmt.expr, scope);
             return;
@@ -238,8 +273,8 @@ static OmegaType analyze_expr(Semantic *sem, ASTNode *expr, Scope *scope) {
                 semantic_fail(sem, expr->line, expr->column, "member access requires a vector value");
                 return OMEGA_TYPE_INVALID;
             }
-            if (!sem_has_import(sem, "vector")) {
-                semantic_fail(sem, expr->line, expr->column, "module 'vector' must be imported before use");
+            if (!sem_has_vector_import(sem)) {
+                semantic_fail(sem, expr->line, expr->column, "module 'sti' (or 'vector') must be imported before use");
                 return OMEGA_TYPE_INVALID;
             }
             const OmegaBuiltinSpec *builtin = omega_find_vector_property_builtin(expr->as.member_expr.member_name);
@@ -364,8 +399,8 @@ static OmegaType analyze_expr(Semantic *sem, ASTNode *expr, Scope *scope) {
                     semantic_fail(sem, expr->line, expr->column, "member calls currently require a vector receiver");
                     return OMEGA_TYPE_INVALID;
                 }
-                if (!sem_has_import(sem, "vector")) {
-                    semantic_fail(sem, expr->line, expr->column, "module 'vector' must be imported before use");
+                if (!sem_has_vector_import(sem)) {
+                    semantic_fail(sem, expr->line, expr->column, "module 'sti' (or 'vector') must be imported before use");
                     return OMEGA_TYPE_INVALID;
                 }
 
@@ -411,6 +446,24 @@ static OmegaType analyze_expr(Semantic *sem, ASTNode *expr, Scope *scope) {
                     return OMEGA_TYPE_VOID;
                 }
 
+                if (builtin->kind == OMEGA_BUILTIN_VECTOR_METHOD_SORT) {
+                    if (expr->as.call_expr.arg_count != 0u) {
+                        semantic_fail(sem, expr->line, expr->column, "sort expects no arguments");
+                        return OMEGA_TYPE_INVALID;
+                    }
+                    expr->inferred_type = OMEGA_TYPE_VOID;
+                    return OMEGA_TYPE_VOID;
+                }
+
+                if (builtin->kind == OMEGA_BUILTIN_VECTOR_METHOD_FREE) {
+                    if (expr->as.call_expr.arg_count != 0u) {
+                        semantic_fail(sem, expr->line, expr->column, "free expects no arguments");
+                        return OMEGA_TYPE_INVALID;
+                    }
+                    expr->inferred_type = OMEGA_TYPE_VOID;
+                    return OMEGA_TYPE_VOID;
+                }
+
                 semantic_fail(sem, expr->line, expr->column, "unsupported vector method");
                 return OMEGA_TYPE_INVALID;
             }
@@ -419,10 +472,7 @@ static OmegaType analyze_expr(Semantic *sem, ASTNode *expr, Scope *scope) {
             const OmegaBuiltinSpec *missing_import_builtin = NULL;
             if (expr->as.call_expr.is_namespace_call) {
                 builtin = omega_find_namespaced_builtin(expr->as.call_expr.ns_name, expr->as.call_expr.func_name);
-                if (builtin == NULL) {
-                    semantic_fail(sem, expr->line, expr->column, "unknown namespaced function call");
-                    return OMEGA_TYPE_INVALID;
-                }
+                /* if not a known builtin, fall through to user module check */
             } else {
                 builtin = omega_find_plain_builtin(expr->as.call_expr.func_name);
                 if (builtin != NULL && builtin->requires_import && !sem_has_import(sem, builtin->module_name)) {
@@ -479,8 +529,28 @@ static OmegaType analyze_expr(Semantic *sem, ASTNode *expr, Scope *scope) {
             }
 
             if (expr->as.call_expr.is_namespace_call) {
-                semantic_fail(sem, expr->line, expr->column, "unknown namespaced function call");
-                return OMEGA_TYPE_INVALID;
+                FunctionSymbol *mod_fn = find_module_function(sem, expr->as.call_expr.ns_name,
+                                                               expr->as.call_expr.func_name);
+                if (mod_fn == NULL) {
+                    semantic_fail(sem, expr->line, expr->column, "unknown namespaced function call");
+                    return OMEGA_TYPE_INVALID;
+                }
+                if (expr->as.call_expr.arg_count != mod_fn->param_count) {
+                    semantic_fail(sem, expr->line, expr->column, "module function call argument count mismatch");
+                    return OMEGA_TYPE_INVALID;
+                }
+                for (size_t i = 0; i < mod_fn->param_count; i++) {
+                    OmegaType got = analyze_expr(sem, expr->as.call_expr.args[i], scope);
+                    if (!sem->st.ok) {
+                        return OMEGA_TYPE_INVALID;
+                    }
+                    if (got != mod_fn->params[i].type) {
+                        semantic_fail(sem, expr->line, expr->column, "module function call argument type mismatch");
+                        return OMEGA_TYPE_INVALID;
+                    }
+                }
+                expr->inferred_type = mod_fn->return_type;
+                return mod_fn->return_type;
             }
 
             FunctionSymbol *fn = find_function(sem, expr->as.call_expr.func_name);
@@ -567,6 +637,9 @@ bool semantic_analyze(Semantic *sem, ASTNode *program) {
         if (decl->kind != AST_IMPORT) {
             continue;
         }
+        if (decl->as.import_stmt.is_file_import) {
+            continue; /* file imports are resolved by the linker */
+        }
         if (!omega_module_exists(decl->as.import_stmt.module)) {
             char msg[256];
             (void)snprintf(msg, sizeof(msg), "unknown module '%s' in import", decl->as.import_stmt.module);
@@ -593,13 +666,26 @@ bool semantic_analyze(Semantic *sem, ASTNode *program) {
         sym.param_count = decl->as.function.param_count;
         sym.decl_node = decl;
         sym.is_entrypoint = decl->as.function.is_entrypoint;
-        if (sym.return_type == OMEGA_TYPE_VECTOR && !sem_has_import(sem, "vector")) {
-            semantic_fail(sem, decl->line, decl->column, "vector type requires 'import vector.'");
+        sym.is_extern = decl->as.function.is_extern;
+        sym.module_name = decl->as.function.module_name;
+
+        /* module functions go into their own table */
+        if (sym.module_name != NULL) {
+            if (find_module_function(sem, sym.module_name, sym.name) != NULL) {
+                semantic_fail(sem, decl->line, decl->column, "duplicate module function declaration");
+                return false;
+            }
+            push_module_function_symbol(sem, sym);
+            continue;
+        }
+
+        if (sym.return_type == OMEGA_TYPE_VECTOR && !sem_has_vector_import(sem)) {
+            semantic_fail(sem, decl->line, decl->column, "vector type requires 'import sti.' or 'import vector.'");
             return false;
         }
         for (size_t p = 0; p < sym.param_count; p++) {
-            if (sym.params[p].type == OMEGA_TYPE_VECTOR && !sem_has_import(sem, "vector")) {
-                semantic_fail(sem, sym.params[p].line, sym.params[p].column, "vector type requires 'import vector.'");
+            if (sym.params[p].type == OMEGA_TYPE_VECTOR && !sem_has_vector_import(sem)) {
+                semantic_fail(sem, sym.params[p].line, sym.params[p].column, "vector type requires 'import sti.' or 'import vector.'");
                 return false;
             }
         }
@@ -627,16 +713,18 @@ bool semantic_analyze(Semantic *sem, ASTNode *program) {
                 return false;
             }
         }
-        analyze_block(sem, fn->decl_node->as.function.body, &root, fn);
-        if (!sem->st.ok) {
-            return false;
-        }
-
-        if (!fn->is_entrypoint && fn->return_type != OMEGA_TYPE_VOID &&
-            !block_returns_on_all_paths(fn->decl_node->as.function.body)) {
-            semantic_fail(sem, fn->decl_node->line, fn->decl_node->column,
-                          "non-void function may not return on all paths");
-            return false;
+        if (!fn->is_extern) {
+            sem->loop_depth = 0;
+            analyze_block(sem, fn->decl_node->as.function.body, &root, fn);
+            if (!sem->st.ok) {
+                return false;
+            }
+            if (!fn->is_entrypoint && fn->return_type != OMEGA_TYPE_VOID &&
+                !block_returns_on_all_paths(fn->decl_node->as.function.body)) {
+                semantic_fail(sem, fn->decl_node->line, fn->decl_node->column,
+                              "non-void function may not return on all paths");
+                return false;
+            }
         }
     }
 

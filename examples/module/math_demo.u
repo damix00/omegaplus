@@ -1,0 +1,44 @@
+import sti.
+import "examples/module/math_module.c".
+
+module math {
+    int32 pow(int32 base, int32 exp).
+    int32 sqrt(int32 n).
+    int32 abs(int32 n).
+    int32 gcd(int32 a, int32 b).
+    int32 clamp(int32 val, int32 lo, int32 hi).
+}
+
+-> main() {
+    // pow: 2^10 = 1024
+    int32 p = math<->pow(2i, 10i).
+    sti<->print("2^10 = ").
+    sti<->print(p).
+    sti<->print("\n").
+
+    // sqrt: floor(sqrt(144)) = 12
+    int32 s = math<->sqrt(144i).
+    sti<->print("sqrt(144) = ").
+    sti<->print(s).
+    sti<->print("\n").
+
+    // abs: |-42| = 42
+    int32 a = math<->abs(-42i).
+    sti<->print("abs(-42) = ").
+    sti<->print(a).
+    sti<->print("\n").
+
+    // gcd: gcd(48, 18) = 6
+    int32 g = math<->gcd(48i, 18i).
+    sti<->print("gcd(48, 18) = ").
+    sti<->print(g).
+    sti<->print("\n").
+
+    // clamp: clamp(150, 0, 100) = 100
+    int32 c = math<->clamp(150i, 0i, 100i).
+    sti<->print("clamp(150, 0, 100) = ").
+    sti<->print(c).
+    sti<->print("\n").
+
+    0i!
+}

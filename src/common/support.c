@@ -94,6 +94,8 @@ const char *type_name(OmegaType t) {
             return "string";
         case OMEGA_TYPE_VECTOR:
             return "vector<-int32";
+        case OMEGA_TYPE_PTR:
+            return "ptr";
         case OMEGA_TYPE_VOID:
             return "void";
         default:
@@ -110,7 +112,7 @@ bool type_is_integral(OmegaType t) {
 }
 
 bool type_is_pointer_like(OmegaType t) {
-    return t == OMEGA_TYPE_STRING || t == OMEGA_TYPE_VECTOR;
+    return t == OMEGA_TYPE_STRING || t == OMEGA_TYPE_VECTOR || t == OMEGA_TYPE_PTR;
 }
 
 bool vector_type_allows_element(OmegaType t) {
@@ -190,19 +192,44 @@ static int run_command_checked(const char *cmd) {
     return 1;
 }
 
-bool run_macho_toolchain(const char *asm_path, const char *obj_path, const char *exe_path) {
-    char cmd1[1024];
-    char cmd2[2048];
+bool run_macho_toolchain(const char *asm_path, const char *obj_path, const char *exe_path,
+                         char **c_files, size_t c_file_count) {
+    char cmd[1024];
 
-    (void)snprintf(cmd1, sizeof(cmd1), "as -arch arm64 \"%s\" -o \"%s\"", asm_path, obj_path);
-    if (run_command_checked(cmd1) != 0) {
+    (void)snprintf(cmd, sizeof(cmd), "as -arch arm64 \"%s\" -o \"%s\"", asm_path, obj_path);
+    if (run_command_checked(cmd) != 0) {
         return false;
     }
 
-    (void)snprintf(cmd2, sizeof(cmd2),
-                   "ld -arch arm64 -lSystem -syslibroot \"$(xcrun --sdk macosx --show-sdk-path)\" -e _main -o \"%s\" \"%s\"",
+    /* Compile each imported C file to an object */
+    char *extra_objs[16];
+    size_t extra_count = 0;
+    for (size_t i = 0; i < c_file_count && i < 16u; i++) {
+        size_t n = strlen(exe_path) + 24u;
+        extra_objs[extra_count] = (char *)xcalloc(n, 1u);
+        (void)snprintf(extra_objs[extra_count], n, "%s_c%zu.o", exe_path, i);
+        (void)snprintf(cmd, sizeof(cmd), "cc -std=c11 -c \"%s\" -o \"%s\"", c_files[i], extra_objs[extra_count]);
+        if (run_command_checked(cmd) != 0) {
+            for (size_t j = 0; j <= extra_count; j++) free(extra_objs[j]);
+            return false;
+        }
+        extra_count++;
+    }
+
+    /* Build link command */
+    char link_cmd[4096];
+    int pos = (int)strlen(
+        "ld -arch arm64 -lSystem -syslibroot \"$(xcrun --sdk macosx --show-sdk-path)\" -e _main");
+    (void)snprintf(link_cmd, sizeof(link_cmd),
+                   "ld -arch arm64 -lSystem -syslibroot \"$(xcrun --sdk macosx --show-sdk-path)\""
+                   " -e _main -o \"%s\" \"%s\"",
                    exe_path, obj_path);
-    if (run_command_checked(cmd2) != 0) {
+    pos = (int)strlen(link_cmd);
+    for (size_t i = 0; i < extra_count; i++) {
+        pos += (int)snprintf(link_cmd + pos, sizeof(link_cmd) - (size_t)pos, " \"%s\"", extra_objs[i]);
+        free(extra_objs[i]);
+    }
+    if (run_command_checked(link_cmd) != 0) {
         return false;
     }
     return true;

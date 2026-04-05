@@ -104,8 +104,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Collect file imports */
+    char *c_files[16];
+    size_t c_file_count = 0;
+    for (size_t i = 0; i < program->as.program.decl_count && c_file_count < 16u; i++) {
+        ASTNode *d = program->as.program.decls[i];
+        if (d->kind == AST_IMPORT && d->as.import_stmt.is_file_import) {
+            c_files[c_file_count++] = d->as.import_stmt.file_path;
+        }
+    }
+
     if (!emit_asm_only) {
-        if (!run_macho_toolchain(asm_path, obj_path, output_path)) {
+        if (!run_macho_toolchain(asm_path, obj_path, output_path, c_files, c_file_count)) {
             free(obj_path);
             free(asm_path);
             free(source);

@@ -14,8 +14,10 @@ VECTOR_EXAMPLE_SRC := $(EXAMPLES_DIR)/vector_demo.u
 FIB_EXAMPLE_BIN := $(BUILD_DIR)/fib_recursive
 FLOAT_EXAMPLE_BIN := $(BUILD_DIR)/float_demo
 VECTOR_EXAMPLE_BIN := $(BUILD_DIR)/vector_demo
+MATH_EXAMPLE_SRC := $(EXAMPLES_DIR)/math_demo.u
+MATH_EXAMPLE_BIN := $(BUILD_DIR)/math_demo
 
-.PHONY: all clean test example run-example float-example run-float-example vector-example run-vector-example
+.PHONY: all clean test example run-example float-example run-float-example vector-example run-vector-example math-example run-math-example
 
 all: $(COMPILER)
 
@@ -45,6 +47,12 @@ vector-example: $(COMPILER) $(VECTOR_EXAMPLE_SRC) | $(BUILD_DIR)
 
 run-vector-example: vector-example
 	$(VECTOR_EXAMPLE_BIN)
+
+math-example: $(COMPILER) $(MATH_EXAMPLE_SRC) | $(BUILD_DIR)
+	$(COMPILER) $(MATH_EXAMPLE_SRC) -o $(MATH_EXAMPLE_BIN)
+
+run-math-example: math-example
+	$(MATH_EXAMPLE_BIN)
 
 test: $(COMPILER)
 	./tests/run_tests.sh

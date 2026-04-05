@@ -56,10 +56,28 @@ static const Token *p_expect(Parser *p, TokenKind kind, const char *message) {
 
 static bool token_is_type(TokenKind kind) {
     return kind == TOK_TYPE_UINT32 || kind == TOK_TYPE_INT32 || kind == TOK_TYPE_FLOAT32 || kind == TOK_TYPE_STRING ||
-           kind == TOK_TYPE_BOOLEAN || kind == TOK_TYPE_VECTOR;
+           kind == TOK_TYPE_BOOLEAN || kind == TOK_TYPE_VECTOR || kind == TOK_TYPE_VOID || kind == TOK_TYPE_PTR;
+}
+
+static bool looks_like_type_start(const Parser *p) {
+    TokenKind k = p_peek(p)->kind;
+    if (token_is_type(k)) {
+        return true;
+    }
+    /* namespace-qualified type: IDENTIFIER <-> type_keyword */
+    if (k == TOK_IDENTIFIER && p_peek_n(p, 1u)->kind == TOK_NS_LINK) {
+        return token_is_type(p_peek_n(p, 2u)->kind);
+    }
+    return false;
 }
 
 static OmegaType parse_type(Parser *p) {
+    /* consume optional namespace prefix: IDENTIFIER <-> */
+    if (p_check(p, TOK_IDENTIFIER) && p_peek_n(p, 1u)->kind == TOK_NS_LINK) {
+        (void)p_advance(p); /* namespace name */
+        (void)p_advance(p); /* <-> */
+    }
+
     const Token *t = p_peek(p);
     switch (t->kind) {
         case TOK_TYPE_UINT32:
@@ -87,6 +105,12 @@ static OmegaType parse_type(Parser *p) {
                 }
             }
             return OMEGA_TYPE_VECTOR;
+        case TOK_TYPE_PTR:
+            (void)p_advance(p);
+            return OMEGA_TYPE_PTR;
+        case TOK_TYPE_VOID:
+            (void)p_advance(p);
+            return OMEGA_TYPE_VOID;
         default:
             status_fail(&p->st, t->line, t->column,
                         "expected a type (uint32/int32/float32/string/boolean/vector<-int32>)");
@@ -144,12 +168,7 @@ static ASTNode *parse_call_args(Parser *p, uint32_t line, uint32_t col, ASTNode 
 }
 
 static bool looks_like_member_access(const Parser *p) {
-    if (!p_check(p, TOK_PERIOD) || p_peek_n(p, 1u)->kind != TOK_IDENTIFIER) {
-        return false;
-    }
-    const Token *dot = p_peek(p);
-    const Token *member = p_peek_n(p, 1u);
-    return member->line == dot->line && member->column == (dot->column + 1u);
+    return p_check(p, TOK_ARROW) && p_peek_n(p, 1u)->kind == TOK_IDENTIFIER;
 }
 
 static ASTNode *parse_postfix_suffixes(Parser *p, ASTNode *base) {
@@ -172,8 +191,8 @@ static ASTNode *parse_postfix_suffixes(Parser *p, ASTNode *base) {
         }
 
         if (looks_like_member_access(p)) {
-            const Token *dot = p_expect(p, TOK_PERIOD, "expected '.' before member name");
-            const Token *member = p_expect(p, TOK_IDENTIFIER, "expected member name after '.'");
+            const Token *dot = p_expect(p, TOK_ARROW, "expected '->' before member name");
+            const Token *member = p_expect(p, TOK_IDENTIFIER, "expected member name after '->'");
             if (dot == NULL || member == NULL) {
                 return NULL;
             }
@@ -686,7 +705,21 @@ static ASTNode *parse_statement(Parser *p) {
     if (p_match(p, TOK_WHILE)) {
         return parse_while_statement(p);
     }
-    if (token_is_type(p_peek(p)->kind)) {
+    if (p_match(p, TOK_BREAK)) {
+        const Token *t = p_prev(p);
+        if (p_expect(p, TOK_PERIOD, "expected '.' after break") == NULL) {
+            return NULL;
+        }
+        return new_node(AST_BREAK_STMT, t->line, t->column);
+    }
+    if (p_match(p, TOK_CONTINUE)) {
+        const Token *t = p_prev(p);
+        if (p_expect(p, TOK_PERIOD, "expected '.' after continue") == NULL) {
+            return NULL;
+        }
+        return new_node(AST_CONTINUE_STMT, t->line, t->column);
+    }
+    if (looks_like_type_start(p)) {
         return parse_var_decl_statement(p);
     }
     if (p_check(p, TOK_IDENTIFIER) && p_peek_n(p, 1u)->kind == TOK_ASSIGN) {
@@ -723,8 +756,21 @@ static ASTNode *parse_block(Parser *p) {
 static ASTNode *parse_import_decl(Parser *p) {
     const Token *kw = p_prev(p);
     const Token *name = p_peek(p);
+
+    if (p_match(p, TOK_STRING)) {
+        /* import "file.c". */
+        if (p_expect(p, TOK_PERIOD, "expected '.' after import file path") == NULL) {
+            return NULL;
+        }
+        ASTNode *n = new_node(AST_IMPORT, kw->line, kw->column);
+        n->as.import_stmt.module = xstrdup_local("<file>");
+        n->as.import_stmt.file_path = xstrdup_local(name->lexeme);
+        n->as.import_stmt.is_file_import = true;
+        return n;
+    }
+
     if (!(p_match(p, TOK_IDENTIFIER) || p_match(p, TOK_TYPE_VECTOR))) {
-        status_fail(&p->st, name->line, name->column, "expected module name after import");
+        status_fail(&p->st, name->line, name->column, "expected module name or file path after import");
         return NULL;
     }
     if (p_expect(p, TOK_PERIOD, "expected '.' after import statement") == NULL) {
@@ -732,6 +778,7 @@ static ASTNode *parse_import_decl(Parser *p) {
     }
     ASTNode *n = new_node(AST_IMPORT, kw->line, kw->column);
     n->as.import_stmt.module = xstrdup_local(name->lexeme);
+    n->as.import_stmt.is_file_import = false;
     return n;
 }
 
@@ -822,25 +869,153 @@ static ASTNode *parse_entrypoint_decl(Parser *p) {
     return fn;
 }
 
+static bool parse_module_block(Parser *p, NodeVec *out_decls) {
+    const Token *name_tok = p_expect(p, TOK_IDENTIFIER, "expected module name after 'module'");
+    if (name_tok == NULL) {
+        return false;
+    }
+    char *module_name = xstrdup_local(name_tok->lexeme);
+    if (p_expect(p, TOK_LBRACE, "expected '{' after module name") == NULL) {
+        return false;
+    }
+    while (!p_check(p, TOK_RBRACE) && !p_check(p, TOK_EOF)) {
+        const Token *start = p_peek(p);
+        OmegaType ret_t = parse_type(p);
+        if (!p->st.ok) {
+            return false;
+        }
+        const Token *fname = p_expect(p, TOK_IDENTIFIER, "expected function name in module");
+        if (fname == NULL) {
+            return false;
+        }
+        if (p_expect(p, TOK_LPAREN, "expected '(' after function name") == NULL) {
+            return false;
+        }
+        ParamVec params = {0};
+        if (!p_check(p, TOK_RPAREN)) {
+            while (true) {
+                OmegaType ptype = parse_type(p);
+                if (!p->st.ok) {
+                    return false;
+                }
+                const Token *pname = p_expect(p, TOK_IDENTIFIER, "expected parameter name");
+                if (pname == NULL) {
+                    return false;
+                }
+                Param param;
+                param.type = ptype;
+                param.name = xstrdup_local(pname->lexeme);
+                param.line = pname->line;
+                param.column = pname->column;
+                param_vec_push(&params, param);
+                if (!p_match(p, TOK_COMMA)) {
+                    break;
+                }
+            }
+        }
+        if (p_expect(p, TOK_RPAREN, "expected ')' after parameters") == NULL) {
+            return false;
+        }
+        if (p_expect(p, TOK_PERIOD, "expected '.' after function declaration in module") == NULL) {
+            return false;
+        }
+        ASTNode *fn = new_node(AST_FUNCTION, start->line, start->column);
+        fn->as.function.name = xstrdup_local(fname->lexeme);
+        fn->as.function.return_type = ret_t;
+        fn->as.function.params = params.data;
+        fn->as.function.param_count = params.len;
+        fn->as.function.body = NULL;
+        fn->as.function.is_entrypoint = false;
+        fn->as.function.is_extern = true;
+        fn->as.function.module_name = module_name;
+        node_vec_push(out_decls, fn);
+    }
+    if (p_expect(p, TOK_RBRACE, "expected '}' to close module block") == NULL) {
+        return false;
+    }
+    return true;
+}
+
+static ASTNode *parse_extern_decl(Parser *p) {
+    const Token *start = p_peek(p);
+    OmegaType ret_t = parse_type(p);
+    if (!p->st.ok) {
+        return NULL;
+    }
+    const Token *name = p_expect(p, TOK_IDENTIFIER, "expected function name after extern");
+    if (name == NULL) {
+        return NULL;
+    }
+    if (p_expect(p, TOK_LPAREN, "expected '(' after extern function name") == NULL) {
+        return NULL;
+    }
+
+    ParamVec params = {0};
+    if (!p_check(p, TOK_RPAREN)) {
+        while (true) {
+            OmegaType ptype = parse_type(p);
+            if (!p->st.ok) {
+                return NULL;
+            }
+            const Token *pname = p_expect(p, TOK_IDENTIFIER, "expected parameter name");
+            if (pname == NULL) {
+                return NULL;
+            }
+            Param param;
+            param.type = ptype;
+            param.name = xstrdup_local(pname->lexeme);
+            param.line = pname->line;
+            param.column = pname->column;
+            param_vec_push(&params, param);
+            if (!p_match(p, TOK_COMMA)) {
+                break;
+            }
+        }
+    }
+    if (p_expect(p, TOK_RPAREN, "expected ')' after extern parameter list") == NULL) {
+        return NULL;
+    }
+    if (p_expect(p, TOK_PERIOD, "expected '.' after extern declaration") == NULL) {
+        return NULL;
+    }
+
+    ASTNode *fn = new_node(AST_FUNCTION, start->line, start->column);
+    fn->as.function.name = xstrdup_local(name->lexeme);
+    fn->as.function.return_type = ret_t;
+    fn->as.function.params = params.data;
+    fn->as.function.param_count = params.len;
+    fn->as.function.body = NULL;
+    fn->as.function.is_entrypoint = false;
+    fn->as.function.is_extern = true;
+    return fn;
+}
+
 ASTNode *parse_program(Parser *p) {
     NodeVec decls = {0};
     while (!p_check(p, TOK_EOF)) {
-        ASTNode *decl = NULL;
         if (p_match(p, TOK_IMPORT)) {
-            decl = parse_import_decl(p);
-        } else if (token_is_type(p_peek(p)->kind)) {
-            decl = parse_function_decl(p);
+            ASTNode *d = parse_import_decl(p);
+            if (d == NULL) return NULL;
+            node_vec_push(&decls, d);
+        } else if (p_match(p, TOK_MODULE)) {
+            if (!parse_module_block(p, &decls)) return NULL;
+        } else if (p_match(p, TOK_EXTERN)) {
+            ASTNode *d = parse_extern_decl(p);
+            if (d == NULL) return NULL;
+            node_vec_push(&decls, d);
+        } else if (looks_like_type_start(p)) {
+            ASTNode *d = parse_function_decl(p);
+            if (d == NULL) return NULL;
+            node_vec_push(&decls, d);
         } else if (p_match(p, TOK_ARROW)) {
-            decl = parse_entrypoint_decl(p);
+            ASTNode *d = parse_entrypoint_decl(p);
+            if (d == NULL) return NULL;
+            node_vec_push(&decls, d);
         } else {
             const Token *t = p_peek(p);
             status_fail(&p->st, t->line, t->column, "unexpected token at top level");
             return NULL;
         }
-        if (decl == NULL) {
-            return NULL;
-        }
-        node_vec_push(&decls, decl);
     }
     ASTNode *program = new_node(AST_PROGRAM, 1u, 1u);
     program->as.program.decls = decls.data;

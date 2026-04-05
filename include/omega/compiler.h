@@ -58,7 +58,13 @@ typedef enum TokenKind {
     TOK_LOGIC_NOT,
     TOK_LOGIC_OR,
     TOK_LOGIC_AND,
-    TOK_NS_LINK
+    TOK_NS_LINK,
+    TOK_EXTERN,
+    TOK_MODULE,
+    TOK_BREAK,
+    TOK_CONTINUE,
+    TOK_TYPE_VOID,
+    TOK_TYPE_PTR
 } TokenKind;
 
 typedef struct Token {
@@ -76,6 +82,7 @@ typedef enum OmegaType {
     OMEGA_TYPE_BOOLEAN,
     OMEGA_TYPE_STRING,
     OMEGA_TYPE_VECTOR,
+    OMEGA_TYPE_PTR,
     OMEGA_TYPE_VOID
 } OmegaType;
 
@@ -108,7 +115,9 @@ typedef enum ASTNodeKind {
     AST_STRING_LITERAL,
     AST_INDEX_EXPR,
     AST_UNARY_EXPR,
-    AST_BINARY_EXPR
+    AST_BINARY_EXPR,
+    AST_BREAK_STMT,
+    AST_CONTINUE_STMT
 } ASTNodeKind;
 
 typedef struct ASTNode ASTNode;
@@ -125,6 +134,8 @@ struct ASTNode {
         } program;
         struct {
             char *module;
+            char *file_path;    /* non-NULL for import "file.c". */
+            bool is_file_import;
         } import_stmt;
         struct {
             char *name;
@@ -133,6 +144,8 @@ struct ASTNode {
             size_t param_count;
             ASTNode *body;
             bool is_entrypoint;
+            bool is_extern;
+            char *module_name;  /* non-NULL for module { } declarations */
         } function;
         struct {
             ASTNode **statements;
@@ -268,20 +281,26 @@ typedef struct Scope {
 
 typedef struct {
     char *name;
+    char *module_name;  /* non-NULL for user module functions */
     OmegaType return_type;
     Param *params;
     size_t param_count;
     ASTNode *decl_node;
     bool is_entrypoint;
+    bool is_extern;
 } FunctionSymbol;
 
 typedef struct {
     FunctionSymbol *funcs;
     size_t func_count;
     size_t func_cap;
+    FunctionSymbol *module_funcs;   /* user-defined module functions */
+    size_t module_func_count;
+    size_t module_func_cap;
     char **imports;
     size_t import_count;
     size_t import_cap;
+    int loop_depth;                 /* for break/continue validation */
     Status st;
 } Semantic;
 
@@ -306,6 +325,7 @@ typedef struct {
     int next_string_id;
     int next_float_id;
     int next_label_id;
+    bool need_sort_helper;
 } Codegen;
 
 typedef struct {
@@ -313,6 +333,11 @@ typedef struct {
     OmegaType type;
     int offset;
 } LocalSlot;
+
+typedef struct {
+    char begin_label[64];
+    char end_label[64];
+} LoopLabel;
 
 typedef struct {
     Codegen *cg;
@@ -323,6 +348,9 @@ typedef struct {
     int next_offset;
     int frame_size;
     char return_label[64];
+    LoopLabel *loops;
+    size_t loop_depth;
+    size_t loop_cap;
 } FunctionCodegen;
 
 void status_fail(Status *st, uint32_t line, uint32_t column, const char *message);
@@ -343,7 +371,8 @@ int align16(int n);
 char *read_whole_file(const char *path);
 char *strip_ext(const char *path);
 void print_usage(const char *argv0);
-bool run_macho_toolchain(const char *asm_path, const char *obj_path, const char *exe_path);
+bool run_macho_toolchain(const char *asm_path, const char *obj_path, const char *exe_path,
+                         char **c_files, size_t c_file_count);
 
 bool lex_all(Lexer *lx);
 ASTNode *parse_program(Parser *p);
