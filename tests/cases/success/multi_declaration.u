@@ -1,0 +1,17 @@
+import sti.
+
+-> main() {
+  int32 a, b = 2i, c.
+  float32 x, y, z.
+
+  a = 1i.
+  c = 3i.
+  x = 1.5f.
+  y = 2.5f.
+  z = x + y.
+
+  print(a + b + c).
+  print(" ").
+  print(z).
+  0i!
+}

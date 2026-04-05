@@ -1,0 +1,9 @@
+import sti.
+
+uint32 f(uint32 x) {
+  if (x > 0u) 1u!
+}
+
+-> main() {
+  sti<->print(0u).
+}

@@ -1,0 +1,35 @@
+import sti.
+
+-> main() {
+  int32 n, x, y.
+  sti<->input(n).
+
+  if (n % 2i == 0i) {
+    x = n-1i.
+    y = n.
+  }
+  else {
+    x = n.
+    y = n-1i.
+  }
+
+  if (n < 4i /\ n != 1i) {
+    sti<->print("NO SOLUTION").
+  }
+  else {
+    int32 i = x.
+    while (i > 0i) {
+      sti<->print(i).
+      sti<->print(" ").
+      i = i - 2i.
+    }
+    i = y.
+    while (i > 0i) {
+      sti<->print(i).
+      sti<->print(" ").
+      i = i - 2i.
+    }
+  }
+
+  0i!
+}

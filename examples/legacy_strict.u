@@ -1,0 +1,17 @@
+import sti.
+
+uint32 f(uint32 x) {
+  x!
+}
+
+-> main() {
+  sti<->print(f(5u)).
+  boolean x = true.
+
+  if (~x) {
+    sti<->print("Gex").
+  }
+
+  if (true \/ false) {}
+  if (true /\ true) {}
+}

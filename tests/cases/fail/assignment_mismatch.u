@@ -1,0 +1,6 @@
+import sti.
+
+-> main() {
+  uint32 x = 1u.
+  x = true.
+}

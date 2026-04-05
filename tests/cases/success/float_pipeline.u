@@ -1,0 +1,14 @@
+import sti.
+
+float32 mix(float32 a, float32 b) {
+  ((a * 0.25f) + (b * 0.75f))!
+}
+
+-> main() {
+  float32 v = mix(2.0f, 10.0f).
+  if (v >= 8.0f) {
+    sti<->print(v).
+  } else {
+    sti<->print(0.0f).
+  }
+}

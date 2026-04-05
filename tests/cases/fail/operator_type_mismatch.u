@@ -1,0 +1,7 @@
+import sti.
+
+-> main() {
+  boolean b = true.
+  uint32 x = 1u + b.
+  sti<->print(x).
+}

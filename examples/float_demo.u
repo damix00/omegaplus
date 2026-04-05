@@ -1,0 +1,10 @@
+import sti.
+
+float32 lerp(float32 a, float32 b, float32 t) {
+  (a + ((b - a) * t))!
+}
+
+-> main() {
+  float32 r = lerp(10.0f, 20.0f, 0.35f).
+  sti<->print(r).
+}

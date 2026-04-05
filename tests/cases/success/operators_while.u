@@ -1,0 +1,24 @@
+import sti.
+
+uint32 score(uint32 n) {
+  uint32 i = 0u.
+  uint32 s = 0u.
+
+  while (i < n) {
+    i = i + 1u.
+    if ((i % 2u) == 0u) {
+      s = s + (i * 3u).
+    } else {
+      s = s + (i / 1u).
+    }
+  }
+
+  if (s >= 20u) s = s - 2u.
+  if (s > 20u /\ s != 0u) s = s + 1u.
+  if (s <= 100u \/ s == 0u) s = s + 1u.
+  s!
+}
+
+-> main() {
+  sti<->print(score(5u)).
+}

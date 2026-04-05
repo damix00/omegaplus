@@ -1,0 +1,10 @@
+import sti.
+
+-> main() {
+  string msg.
+  msg = "hello".
+  print(msg).
+  print(" ").
+  print(7i).
+  0i!
+}

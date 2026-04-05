@@ -1,0 +1,17 @@
+import sti.
+import vector.
+
+-> main() {
+  vector<-int32 example_vector.
+  example_vector.push_back(10i).
+  example_vector.push_back(20i).
+
+  sti<->print(example_vector.size).
+  sti<->print(" ").
+  sti<->print(example_vector[1i]).
+  sti<->print(" ").
+
+  example_vector.clear().
+  sti<->print(example_vector.size).
+  0i!
+}

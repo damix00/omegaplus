@@ -1,0 +1,8 @@
+import sti.
+
+-> main() {
+  boolean ok = 1.0f < 2u.
+  if (ok) {
+    sti<->print(1u).
+  }
+}

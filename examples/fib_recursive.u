@@ -1,0 +1,10 @@
+import sti.
+
+uint32 f(uint32 x) {
+  if (x <= 2u) 1u!
+  (f(x - 1u) + f(x - 2u))!
+}
+
+-> main() {
+  sti<->print(f(10u)).
+}
