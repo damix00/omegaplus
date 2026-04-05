@@ -26,7 +26,7 @@ static FunctionSymbol *find_module_function(Semantic *sem, const char *module_na
     return NULL;
 }
 
-static void push_module_function_symbol(Semantic *sem, FunctionSymbol fn) {
+void semantic_register_module_func(Semantic *sem, FunctionSymbol fn) {
     if (sem->module_func_count == sem->module_func_cap) {
         size_t next = (sem->module_func_cap == 0u) ? 8u : sem->module_func_cap * 2u;
         sem->module_funcs = (FunctionSymbol *)xrealloc(sem->module_funcs, next * sizeof(FunctionSymbol));
@@ -627,6 +627,7 @@ static bool block_returns_on_all_paths(const ASTNode *block) {
 
 bool semantic_analyze(Semantic *sem, ASTNode *program) {
     sem->st.ok = true;
+    omega_register_stdlib(sem);
     if (program == NULL || program->kind != AST_PROGRAM) {
         semantic_fail(sem, 1u, 1u, "invalid AST root");
         return false;
@@ -671,11 +672,12 @@ bool semantic_analyze(Semantic *sem, ASTNode *program) {
 
         /* module functions go into their own table */
         if (sym.module_name != NULL) {
-            if (find_module_function(sem, sym.module_name, sym.name) != NULL) {
+            if (find_module_function(sem, sym.module_name, sym.name) != NULL &&
+            sym.module_name != NULL) {
                 semantic_fail(sem, decl->line, decl->column, "duplicate module function declaration");
                 return false;
             }
-            push_module_function_symbol(sem, sym);
+            semantic_register_module_func(sem, sym);
             continue;
         }
 

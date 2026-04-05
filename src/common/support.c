@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 
 void status_fail(Status *st, uint32_t line, uint32_t column, const char *message) {
@@ -192,7 +193,13 @@ static int run_command_checked(const char *cmd) {
     return 1;
 }
 
+static bool file_exists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
 bool run_macho_toolchain(const char *asm_path, const char *obj_path, const char *exe_path,
+                         const char *stdlib_obj,
                          char **c_files, size_t c_file_count) {
     char cmd[1024];
 
@@ -218,13 +225,15 @@ bool run_macho_toolchain(const char *asm_path, const char *obj_path, const char 
 
     /* Build link command */
     char link_cmd[4096];
-    int pos = (int)strlen(
-        "ld -arch arm64 -lSystem -syslibroot \"$(xcrun --sdk macosx --show-sdk-path)\" -e _main");
     (void)snprintf(link_cmd, sizeof(link_cmd),
                    "ld -arch arm64 -lSystem -syslibroot \"$(xcrun --sdk macosx --show-sdk-path)\""
                    " -e _main -o \"%s\" \"%s\"",
                    exe_path, obj_path);
-    pos = (int)strlen(link_cmd);
+    int pos = (int)strlen(link_cmd);
+    /* always link the stdlib if it exists */
+    if (stdlib_obj != NULL && file_exists(stdlib_obj)) {
+        pos += (int)snprintf(link_cmd + pos, sizeof(link_cmd) - (size_t)pos, " \"%s\"", stdlib_obj);
+    }
     for (size_t i = 0; i < extra_count; i++) {
         pos += (int)snprintf(link_cmd + pos, sizeof(link_cmd) - (size_t)pos, " \"%s\"", extra_objs[i]);
         free(extra_objs[i]);

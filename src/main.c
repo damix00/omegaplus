@@ -114,8 +114,18 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* Locate stdlib object relative to compiler binary */
+    char stdlib_obj[1024];
+    const char *bin_slash = strrchr(argv[0], '/');
+    if (bin_slash != NULL) {
+        size_t dir_len = (size_t)(bin_slash - argv[0] + 1u);
+        (void)snprintf(stdlib_obj, sizeof(stdlib_obj), "%.*somega_stdlib.o", (int)dir_len, argv[0]);
+    } else {
+        (void)snprintf(stdlib_obj, sizeof(stdlib_obj), "omega_stdlib.o");
+    }
+
     if (!emit_asm_only) {
-        if (!run_macho_toolchain(asm_path, obj_path, output_path, c_files, c_file_count)) {
+        if (!run_macho_toolchain(asm_path, obj_path, output_path, stdlib_obj, c_files, c_file_count)) {
             free(obj_path);
             free(asm_path);
             free(source);

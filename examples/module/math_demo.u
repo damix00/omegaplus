@@ -1,13 +1,4 @@
 import sti.
-import "examples/module/math_module.c".
-
-module math {
-    int32 pow(int32 base, int32 exp).
-    int32 sqrt(int32 n).
-    int32 abs(int32 n).
-    int32 gcd(int32 a, int32 b).
-    int32 clamp(int32 val, int32 lo, int32 hi).
-}
 
 -> main() {
     // pow: 2^10 = 1024

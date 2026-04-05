@@ -5,9 +5,13 @@ SRC_DIR := src
 BIN_DIR := bin
 BUILD_DIR := build
 EXAMPLES_DIR := examples
+STDLIB_DIR := stdlib
 
 COMPILER := $(BIN_DIR)/omegac
 COMPILER_SOURCES := $(shell find $(SRC_DIR) -type f -name '*.c' | sort)
+STDLIB_SOURCES := $(wildcard $(STDLIB_DIR)/*.c)
+STDLIB_OBJS := $(patsubst $(STDLIB_DIR)/%.c,$(BUILD_DIR)/stdlib_%.o,$(STDLIB_SOURCES))
+STDLIB_OBJ := $(BIN_DIR)/omega_stdlib.o
 FIB_EXAMPLE_SRC := $(EXAMPLES_DIR)/fib_recursive.u
 FLOAT_EXAMPLE_SRC := $(EXAMPLES_DIR)/float_demo.u
 VECTOR_EXAMPLE_SRC := $(EXAMPLES_DIR)/vector_demo.u
@@ -19,7 +23,13 @@ MATH_EXAMPLE_BIN := $(BUILD_DIR)/math_demo
 
 .PHONY: all clean test example run-example float-example run-float-example vector-example run-vector-example math-example run-math-example
 
-all: $(COMPILER)
+all: $(COMPILER) $(STDLIB_OBJ)
+
+$(BUILD_DIR)/stdlib_%.o: $(STDLIB_DIR)/%.c | $(BUILD_DIR)
+	$(CC) -std=c11 -c $< -o $@
+
+$(STDLIB_OBJ): $(STDLIB_OBJS) | $(BIN_DIR)
+	ld -r -o $@ $(STDLIB_OBJS)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -59,6 +69,7 @@ test: $(COMPILER)
 
 clean:
 	rm -f $(COMPILER)
+	rm -f $(STDLIB_OBJ)
 	rm -rf $(BUILD_DIR)/*
 	rm -rf tests/tmp
 	rm -f omegac

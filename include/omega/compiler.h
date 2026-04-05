@@ -372,10 +372,13 @@ char *read_whole_file(const char *path);
 char *strip_ext(const char *path);
 void print_usage(const char *argv0);
 bool run_macho_toolchain(const char *asm_path, const char *obj_path, const char *exe_path,
+                         const char *stdlib_obj,
                          char **c_files, size_t c_file_count);
 
 bool lex_all(Lexer *lx);
 ASTNode *parse_program(Parser *p);
+void semantic_register_module_func(Semantic *sem, FunctionSymbol fn);
+void omega_register_stdlib(Semantic *sem);
 bool semantic_analyze(Semantic *sem, ASTNode *program);
 bool generate_program_asm(ASTNode *program, const char *asm_path, Status *st);
 

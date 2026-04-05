@@ -1,0 +1,16 @@
+-> main() {
+    int32 x = math<->sqrt(144i).
+    int32 y = math<->pow(2i, 10i).
+    int32 z = math<->abs(-42i).
+    int32 a = math<->min(10i, 3i).
+    int32 b = math<->max(10i, 3i).
+    int32 c = math<->clamp(15i, 0i, 10i).
+    int32 d = math<->gcd(48i, 18i).
+    sti<->print(x).
+    sti<->print(y).
+    sti<->print(z).
+    sti<->print(a).
+    sti<->print(b).
+    sti<->print(c).
+    sti<->print(d).
+}
